@@ -1,0 +1,396 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  VIEWER
+}
+
+enum OtpChannel {
+  EMAIL
+  PHONE
+}
+
+enum ShareBatchStatus {
+  DRAFT
+  PENDING
+  PROCESSING
+  COMPLETED
+  PARTIALLY_FAILED
+  FAILED
+}
+
+enum ShareLinkStatus {
+  ACTIVE
+  ACCESSED
+  EXPIRED
+  REVOKED
+}
+
+enum FileMatchStatus {
+  MATCHED
+  UNMATCHED
+  MANUAL
+  SKIPPED
+}
+
+enum NotificationType {
+  SHARE_SENT
+  SHARE_ACCESSED
+  SHARE_EXPIRED
+  OTP_SENT
+  BATCH_COMPLETE
+}
+
+// ─────────────────────────────────────────────
+// MODELS
+// ─────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  name          String    @db.VarChar(255)
+  email         String    @unique @db.VarChar(320)
+  passwordHash  String?   @map("password_hash")
+  role          UserRole  @default(MANAGER)
+  avatarUrl     String?   @map("avatar_url")
+  isActive      Boolean   @default(true) @map("is_active")
+  lastLoginAt   DateTime? @map("last_login_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  accounts       Account[]
+  sessions       Session[]
+  folders        Folder[]
+  files          File[]
+  csvUploads     CsvUpload[]
+  brandingAssets BrandingAsset[]
+  emailTemplates EmailTemplate[]
+  shareBatches   ShareBatch[]
+  exportLogs     ShareExportLog[]
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(uuid()) @db.Uuid
+  userId            String  @map("user_id") @db.Uuid
+  type              String  @db.VarChar(100)
+  provider          String  @db.VarChar(100)
+  providerAccountId String  @map("provider_account_id") @db.VarChar(255)
+  refreshToken      String? @map("refresh_token")
+  accessToken       String? @map("access_token")
+  expiresAt         BigInt? @map("expires_at")
+  tokenType         String? @map("token_type") @db.VarChar(100)
+  scope             String?
+  idToken           String? @map("id_token")
+  sessionState      String? @map("session_state")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  sessionToken String   @unique @map("session_token")
+  expires      DateTime @db.Timestamptz
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Folder {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String   @db.VarChar(500)
+  description    String?
+  createdById    String   @map("created_by_id") @db.Uuid
+  isArchived     Boolean  @default(false) @map("is_archived")
+  fileCount      Int      @default(0) @map("file_count")
+  totalSizeBytes BigInt   @default(0) @map("total_size_bytes")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  createdBy    User         @relation(fields: [createdById], references: [id])
+  files        File[]
+  csvUploads   CsvUpload[]
+  shareBatches ShareBatch[]
+
+  @@map("folders")
+}
+
+model File {
+  id             String   @id @default(uuid()) @db.Uuid
+  folderId       String   @map("folder_id") @db.Uuid
+  originalName   String   @map("original_name") @db.VarChar(1000)
+  normalizedName String   @map("normalized_name") @db.VarChar(1000)
+  storageKey     String   @map("storage_key")
+  storageBucket  String   @map("storage_bucket") @db.VarChar(255)
+  mimeType       String   @default("application/pdf") @map("mime_type") @db.VarChar(255)
+  sizeBytes      BigInt   @default(0) @map("size_bytes")
+  checksumMd5    String?  @map("checksum_md5") @db.VarChar(32)
+  isDeleted      Boolean  @default(false) @map("is_deleted")
+  uploadedById   String   @map("uploaded_by_id") @db.Uuid
+  uploadedAt     DateTime @default(now()) @map("uploaded_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  folder      Folder      @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  uploadedBy  User        @relation(fields: [uploadedById], references: [id])
+  recipients  Recipient[]
+  shareLinks  ShareLink[]
+
+  @@unique([folderId, originalName])
+  @@map("files")
+}
+
+model CsvUpload {
+  id            String    @id @default(uuid()) @db.Uuid
+  folderId      String    @map("folder_id") @db.Uuid
+  fileName      String    @map("file_name") @db.VarChar(500)
+  storageKey    String    @map("storage_key")
+  storageBucket String    @map("storage_bucket") @db.VarChar(255)
+  sizeBytes     BigInt    @default(0) @map("size_bytes")
+  rowCount      Int?      @map("row_count")
+  parsedAt      DateTime? @map("parsed_at") @db.Timestamptz
+  mappingStatus String    @default("PENDING") @map("mapping_status") @db.VarChar(50)
+  uploadedById  String    @map("uploaded_by_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  folder       Folder       @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id])
+  recipients   Recipient[]
+  shareBatches ShareBatch[]
+
+  @@map("csv_uploads")
+}
+
+model Recipient {
+  id             String          @id @default(uuid()) @db.Uuid
+  csvUploadId    String          @map("csv_upload_id") @db.Uuid
+  name           String          @db.VarChar(500)
+  normalizedName String          @map("normalized_name") @db.VarChar(500)
+  email          String          @db.VarChar(320)
+  phone          String?         @db.VarChar(30)
+  extraData      Json?           @map("extra_data")
+  matchedFileId  String?         @map("matched_file_id") @db.Uuid
+  matchScore     Decimal?        @map("match_score") @db.Decimal(5, 2)
+  matchStatus    FileMatchStatus @default(UNMATCHED) @map("match_status")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+  csvUpload   CsvUpload  @relation(fields: [csvUploadId], references: [id], onDelete: Cascade)
+  matchedFile File?      @relation(fields: [matchedFileId], references: [id], onDelete: SetNull)
+  shareLinks  ShareLink[]
+
+  @@map("recipients")
+}
+
+model BrandingAsset {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String   @db.VarChar(255)
+  storageKey    String   @map("storage_key")
+  storageBucket String   @map("storage_bucket") @db.VarChar(255)
+  publicUrl     String?  @map("public_url")
+  fileType      String?  @map("file_type") @db.VarChar(50)
+  sizeBytes     BigInt   @default(0) @map("size_bytes")
+  uploadedById  String   @map("uploaded_by_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id])
+  shareBatches ShareBatch[]
+
+  @@map("branding_assets")
+}
+
+model EmailTemplate {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String   @db.VarChar(255)
+  subject       String
+  bodyHtml      String   @map("body_html")
+  bodyText      String?  @map("body_text")
+  variablesUsed String[] @map("variables_used")
+  createdById   String   @map("created_by_id") @db.Uuid
+  isDefault     Boolean  @default(false) @map("is_default")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  createdBy    User         @relation(fields: [createdById], references: [id])
+  shareBatches ShareBatch[]
+
+  @@map("email_templates")
+}
+
+model ShareBatch {
+  id                 String           @id @default(uuid()) @db.Uuid
+  folderId           String           @map("folder_id") @db.Uuid
+  csvUploadId        String           @map("csv_upload_id") @db.Uuid
+  createdById        String           @map("created_by_id") @db.Uuid
+  emailTemplateId    String?          @map("email_template_id") @db.Uuid
+  emailSubject       String           @map("email_subject")
+  emailBodyHtml      String           @map("email_body_html")
+  emailBodyText      String?          @map("email_body_text")
+  brandingAssetId    String?          @map("branding_asset_id") @db.Uuid
+  brandingLogoUrl    String?          @map("branding_logo_url")
+  otpEnabled         Boolean          @default(false) @map("otp_enabled")
+  otpChannel         OtpChannel?      @map("otp_channel")
+  linkExpiryHours    Int?             @map("link_expiry_hours")
+  linkExpiryLabel    String?          @map("link_expiry_label") @db.VarChar(100)
+  status             ShareBatchStatus @default(DRAFT)
+  totalRecipients    Int              @default(0) @map("total_recipients")
+  sentCount          Int              @default(0) @map("sent_count")
+  failedCount        Int              @default(0) @map("failed_count")
+  accessedCount      Int              @default(0) @map("accessed_count")
+  scheduledAt        DateTime?        @map("scheduled_at") @db.Timestamptz
+  startedAt          DateTime?        @map("started_at") @db.Timestamptz
+  completedAt        DateTime?        @map("completed_at") @db.Timestamptz
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  folder        Folder          @relation(fields: [folderId], references: [id])
+  csvUpload     CsvUpload       @relation(fields: [csvUploadId], references: [id])
+  createdBy     User            @relation(fields: [createdById], references: [id])
+  emailTemplate EmailTemplate?  @relation(fields: [emailTemplateId], references: [id])
+  brandingAsset BrandingAsset?  @relation(fields: [brandingAssetId], references: [id])
+  shareLinks    ShareLink[]
+  exportLogs    ShareExportLog[]
+  jobQueueLogs  JobQueueLog[]
+
+  @@map("share_batches")
+}
+
+model ShareLink {
+  id              String          @id @default(uuid()) @db.Uuid
+  shareBatchId    String          @map("share_batch_id") @db.Uuid
+  recipientId     String          @map("recipient_id") @db.Uuid
+  fileId          String          @map("file_id") @db.Uuid
+  token           String          @unique @db.VarChar(64)
+  status          ShareLinkStatus @default(ACTIVE)
+  otpCodeHash     String?         @map("otp_code_hash")
+  otpSentAt       DateTime?       @map("otp_sent_at") @db.Timestamptz
+  otpVerifiedAt   DateTime?       @map("otp_verified_at") @db.Timestamptz
+  otpAttempts     Int             @default(0) @map("otp_attempts")
+  expiresAt       DateTime?       @map("expires_at") @db.Timestamptz
+  accessCount     Int             @default(0) @map("access_count")
+  lastAccessedAt  DateTime?       @map("last_accessed_at") @db.Timestamptz
+  firstAccessedAt DateTime?       @map("first_accessed_at") @db.Timestamptz
+  lastAccessedIp  String?         @map("last_accessed_ip")
+  lastUserAgent   String?         @map("last_user_agent")
+  emailSent       Boolean         @default(false) @map("email_sent")
+  emailSentAt     DateTime?       @map("email_sent_at") @db.Timestamptz
+  emailError      String?         @map("email_error")
+  sendAttempts    Int             @default(0) @map("send_attempts")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+  shareBatch  ShareBatch       @relation(fields: [shareBatchId], references: [id], onDelete: Cascade)
+  recipient   Recipient        @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  file        File             @relation(fields: [fileId], references: [id])
+  accessLogs  ShareAccessLog[]
+  jobLogs     JobQueueLog[]
+
+  @@map("share_links")
+}
+
+model ShareAccessLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  shareLinkId  String   @map("share_link_id") @db.Uuid
+  eventType    String   @map("event_type") @db.VarChar(50)
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  country      String?  @db.VarChar(100)
+  city         String?  @db.VarChar(100)
+  metadata     Json?
+  occurredAt   DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+
+  shareLink ShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+
+  @@map("share_access_logs")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  action     String   @db.VarChar(100)
+  entityType String?  @map("entity_type") @db.VarChar(100)
+  entityId   String?  @map("entity_id") @db.Uuid
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model Notification {
+  id         String           @id @default(uuid()) @db.Uuid
+  userId     String           @map("user_id") @db.Uuid
+  type       NotificationType
+  title      String           @db.VarChar(500)
+  message    String?
+  entityType String?          @map("entity_type") @db.VarChar(100)
+  entityId   String?          @map("entity_id") @db.Uuid
+  isRead     Boolean          @default(false) @map("is_read")
+  readAt     DateTime?        @map("read_at") @db.Timestamptz
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model ShareExportLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  shareBatchId  String   @map("share_batch_id") @db.Uuid
+  exportedById  String   @map("exported_by_id") @db.Uuid
+  fileName      String   @map("file_name") @db.VarChar(500)
+  rowCount      Int      @default(0) @map("row_count")
+  exportedAt    DateTime @default(now()) @map("exported_at") @db.Timestamptz
+
+  shareBatch ShareBatch @relation(fields: [shareBatchId], references: [id], onDelete: Cascade)
+  exportedBy User       @relation(fields: [exportedById], references: [id])
+
+  @@map("share_export_logs")
+}
+
+model JobQueueLog {
+  id           String    @id @default(uuid()) @db.Uuid
+  shareBatchId String    @map("share_batch_id") @db.Uuid
+  shareLinkId  String?   @map("share_link_id") @db.Uuid
+  jobId        String?   @map("job_id") @db.VarChar(255)
+  queueName    String    @map("queue_name") @db.VarChar(100)
+  status       String    @db.VarChar(50)
+  attempt      Int       @default(1)
+  errorMessage String?   @map("error_message")
+  startedAt    DateTime? @map("started_at") @db.Timestamptz
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  shareBatch ShareBatch  @relation(fields: [shareBatchId], references: [id], onDelete: Cascade)
+  shareLink  ShareLink?  @relation(fields: [shareLinkId], references: [id], onDelete: SetNull)
+
+  @@map("job_queue_logs")
+}

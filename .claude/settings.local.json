@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PGPASSWORD=\"India@2141\" psql -h 192.168.1.18 -U postgres -d docupile_share -c \"SELECT version\\(\\);\")",
+      "Bash(where psql:*)",
+      "Read(//c/Program Files/PostgreSQL//**)",
+      "Read(//c/Program Files/PostgreSQL/**)",
+      "Bash(find /c -name psql.exe)",
+      "Bash(PGPASSWORD=\"India@2141\" \"/c/Program Files/PostgreSQL/17/bin/psql.exe\" -h 192.168.1.18 -U postgres -d docupile_share -c \"SELECT version\\(\\);\")",
+      "Bash(PGPASSWORD=\"India@2141\" \"/c/Program Files/PostgreSQL/17/bin/psql.exe\" -h 192.168.1.18 -U postgres -d docupile_share -f \"F:/Code Chandresh/docupile share/database/schema.sql\")",
+      "Bash(PGPASSWORD=\"India@2141\" \"/c/Program Files/PostgreSQL/17/bin/psql.exe\" -h 192.168.1.18 -U postgres -d docupile_share -c \":*)",
+      "Bash(npm install:*)",
+      "Bash(npx prisma:*)",
+      "Bash(npx next:*)",
+      "Bash(findstr /V \"ECONNREFUSED\\\\|errors\\\\]\\\\|\\\\[errors\\\\]\\\\|errno\\\\|syscall\\\\|address\\\\|port 6379\\\\|afterConnectMultiple\\\\|internalConnectMultiple\\\\|callbackTrampoline\\\\|async_hooks\\\\|Connection is closed\\\\|EventEmitter\")",
+      "Bash(findstr /V \"ECONNREFUSED\")",
+      "Bash(start cmd:*)",
+      "Bash(node -e \":*)",
+      "Bash(ls app/\\\\\\(dashboard\\\\\\)/)",
+      "Bash(npx tsc:*)",
+      "Bash(dir \"F:\\\\Code Chandresh\\\\docupile share\\\\components\\\\folders\")",
+      "Bash(taskkill /F /IM node.exe)"
+    ]
+  }
+}
